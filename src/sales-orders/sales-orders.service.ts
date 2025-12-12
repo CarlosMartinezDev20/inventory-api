@@ -200,6 +200,10 @@ export class SalesOrdersService {
   }
 
   async fulfill(id: string, dto: FulfillSalesOrderDto, userId?: string) {
+    console.log('[FULFILL] Starting fulfillment for order:', id);
+    console.log('[FULFILL] userId received:', userId);
+    console.log('[FULFILL] dto:', JSON.stringify(dto));
+    
     const order = await this.findOne(id);
 
     if (order.status === SalesOrderStatus.FULFILLED) {
@@ -420,8 +424,13 @@ export class SalesOrdersService {
       });
 
       // Create financial transaction for the sale
+      console.log('[FULFILL] About to create financial transaction. userId:', userId);
       if (userId) {
+        console.log('[FULFILL] Calling createFinancialTransaction...');
         await this.createFinancialTransaction(tx, updatedOrder, userId);
+        console.log('[FULFILL] createFinancialTransaction completed');
+      } else {
+        console.warn('[FULFILL] No userId provided, skipping financial transaction');
       }
 
       return updatedOrder;
