@@ -414,6 +414,26 @@ export class SalesOrdersService {
         });
       }
 
+      // Primero obtener la orden actualizada (antes de cambiar estado)
+      const orderForTransaction = await tx.salesOrder.findUnique({
+        where: { id },
+        include: {
+          customer: true,
+          items: { include: { product: true } },
+        },
+      });
+
+      // Create financial transaction BEFORE updating status
+      console.log('[FULFILL] About to create financial transaction. userId:', userId);
+      if (!userId) {
+        throw new BadRequestException('UserId is required to create financial transaction');
+      }
+      
+      console.log('[FULFILL] Calling createFinancialTransaction...');
+      await this.createFinancialTransaction(tx, orderForTransaction, userId);
+      console.log('[FULFILL] createFinancialTransaction completed');
+
+      // Now update the order status
       const updatedOrder = await tx.salesOrder.update({
         where: { id },
         data: { status: SalesOrderStatus.FULFILLED },
@@ -423,62 +443,55 @@ export class SalesOrdersService {
         },
       });
 
-      // Create financial transaction for the sale
-      console.log('[FULFILL] About to create financial transaction. userId:', userId);
-      if (userId) {
-        console.log('[FULFILL] Calling createFinancialTransaction...');
-        await this.createFinancialTransaction(tx, updatedOrder, userId);
-        console.log('[FULFILL] createFinancialTransaction completed');
-      } else {
-        console.warn('[FULFILL] No userId provided, skipping financial transaction');
-      }
-
       return updatedOrder;
     });
   }
 
   private async createFinancialTransaction(tx: any, order: any, userId: string) {
-    try {
-      console.log('[FINANCIAL] Creating transaction for order:', order.id);
-      
-      // Get "Sales Revenue" category
-      const salesCategory = await tx.financialCategory.findFirst({
-        where: { name: 'Sales Revenue', type: 'INCOME' },
-      });
+    console.log('[FINANCIAL] Creating transaction for order:', order.id);
+    console.log('[FINANCIAL] Order data:', JSON.stringify({ 
+      id: order.id, 
+      customerId: order.customerId,
+      customerName: order.customer?.name,
+      items: order.items.length 
+    }));
+    
+    // Get "Sales Revenue" category
+    const salesCategory = await tx.financialCategory.findFirst({
+      where: { name: 'Sales Revenue', type: 'INCOME' },
+    });
 
-      if (!salesCategory) {
-        console.warn('[FINANCIAL] Sales Revenue category not found, skipping transaction creation');
-        return;
-      }
-
-      console.log('[FINANCIAL] Found category:', salesCategory.id);
-
-      // Calculate total amount
-      const totalAmount = order.items.reduce((sum: number, item: any) => {
-        const itemTotal = Number(item.qty) * Number(item.unitPrice) - Number(item.discount || 0);
-        return sum + itemTotal;
-      }, 0);
-
-      console.log('[FINANCIAL] Total amount:', totalAmount);
-
-      // Create income transaction
-      const transaction = await tx.transaction.create({
-        data: {
-          type: 'INCOME',
-          categoryId: salesCategory.id,
-          amount: new Prisma.Decimal(totalAmount),
-          description: `Venta ${order.customer.name} - SO-${order.id.slice(0, 8)}`,
-          transactionDate: new Date(),
-          reference: `SO-${order.id.slice(0, 8)}`,
-          salesOrderId: order.id,
-          createdBy: userId,
-        },
-      });
-
-      console.log('[FINANCIAL] Transaction created successfully:', transaction.id);
-    } catch (error) {
-      console.error('[FINANCIAL] Error creating financial transaction:', error);
-      // Don't fail the fulfillment if transaction creation fails
+    if (!salesCategory) {
+      const error = 'Sales Revenue category not found in database';
+      console.error('[FINANCIAL]', error);
+      throw new Error(error);
     }
+
+    console.log('[FINANCIAL] Found category:', salesCategory.id);
+
+    // Calculate total amount
+    const totalAmount = order.items.reduce((sum: number, item: any) => {
+      const itemTotal = Number(item.qty) * Number(item.unitPrice) - Number(item.discount || 0);
+      return sum + itemTotal;
+    }, 0);
+
+    console.log('[FINANCIAL] Total amount:', totalAmount);
+
+    // Create income transaction
+    const transaction = await tx.transaction.create({
+      data: {
+        type: 'INCOME',
+        categoryId: salesCategory.id,
+        amount: new Prisma.Decimal(totalAmount),
+        description: `Venta ${order.customer.name} - SO-${order.id.slice(0, 8)}`,
+        transactionDate: new Date(),
+        reference: `SO-${order.id.slice(0, 8)}`,
+        salesOrderId: order.id,
+        createdBy: userId,
+      },
+    });
+
+    console.log('[FINANCIAL] Transaction created successfully:', transaction.id);
+    return transaction;
   }
 }
