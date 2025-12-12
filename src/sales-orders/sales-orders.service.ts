@@ -430,15 +430,19 @@ export class SalesOrdersService {
 
   private async createFinancialTransaction(tx: any, order: any, userId: string) {
     try {
+      console.log('[FINANCIAL] Creating transaction for order:', order.id);
+      
       // Get "Sales Revenue" category
       const salesCategory = await tx.financialCategory.findFirst({
         where: { name: 'Sales Revenue', type: 'INCOME' },
       });
 
       if (!salesCategory) {
-        console.warn('Sales Revenue category not found, skipping transaction creation');
+        console.warn('[FINANCIAL] Sales Revenue category not found, skipping transaction creation');
         return;
       }
+
+      console.log('[FINANCIAL] Found category:', salesCategory.id);
 
       // Calculate total amount
       const totalAmount = order.items.reduce((sum: number, item: any) => {
@@ -446,8 +450,10 @@ export class SalesOrdersService {
         return sum + itemTotal;
       }, 0);
 
+      console.log('[FINANCIAL] Total amount:', totalAmount);
+
       // Create income transaction
-      await tx.transaction.create({
+      const transaction = await tx.transaction.create({
         data: {
           type: 'INCOME',
           categoryId: salesCategory.id,
@@ -459,8 +465,10 @@ export class SalesOrdersService {
           createdBy: userId,
         },
       });
+
+      console.log('[FINANCIAL] Transaction created successfully:', transaction.id);
     } catch (error) {
-      console.error('Error creating financial transaction:', error);
+      console.error('[FINANCIAL] Error creating financial transaction:', error);
       // Don't fail the fulfillment if transaction creation fails
     }
   }
