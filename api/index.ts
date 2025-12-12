@@ -2,69 +2,68 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from '../src/app.module';
-import { ExpressAdapter } from '@nestjs/platform-express';
-import express, { Request, Response } from 'express';
+import { INestApplication } from '@nestjs/common';
 
-const expressApp = express();
-let cachedApp: any;
+let app: INestApplication;
 
 async function bootstrap() {
-  if (cachedApp) {
-    return cachedApp;
-  }
+  if (!app) {
+    app = await NestFactory.create(AppModule);
 
-  const adapter = new ExpressAdapter(expressApp);
-  const app = await NestFactory.create(AppModule, adapter);
+    // Enable CORS
+    app.enableCors({
+      origin: '*',
+      credentials: true,
+    });
 
-  // Enable CORS
-  app.enableCors();
+    // Global validation pipe
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: false,
+        transform: true,
+        transformOptions: {
+          enableImplicitConversion: true,
+        },
+      }),
+    );
 
-  // Global validation pipe
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: false,
-      transform: true,
-      transformOptions: {
-        enableImplicitConversion: true,
+    // Swagger configuration
+    const config = new DocumentBuilder()
+      .setTitle('Inventory Management API')
+      .setDescription('REST API for inventory management system with PostgreSQL and Prisma')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .addTag('Authentication', 'Login and JWT authentication')
+      .addTag('Users', 'User management')
+      .addTag('Categories', 'Product categories')
+      .addTag('Suppliers', 'Supplier management')
+      .addTag('Customers', 'Customer management')
+      .addTag('Warehouses', 'Warehouse locations')
+      .addTag('Products', 'Product catalog with inventory tracking')
+      .addTag('Inventory', 'Inventory levels and adjustments')
+      .addTag('Stock Movements', 'Stock IN/OUT operations')
+      .addTag('Purchase Orders', 'Purchase orders and receiving')
+      .addTag('Sales Orders', 'Sales orders and fulfillment')
+      .build();
+
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('docs', app, document, {
+      swaggerOptions: {
+        persistAuthorization: true,
+        tagsSorter: 'alpha',
+        operationsSorter: 'alpha',
       },
-    }),
-  );
+    });
 
-  // Swagger configuration
-  const config = new DocumentBuilder()
-    .setTitle('Inventory Management API')
-    .setDescription('REST API for inventory management system with PostgreSQL and Prisma')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .addTag('Authentication', 'Login and JWT authentication')
-    .addTag('Users', 'User management')
-    .addTag('Categories', 'Product categories')
-    .addTag('Suppliers', 'Supplier management')
-    .addTag('Customers', 'Customer management')
-    .addTag('Warehouses', 'Warehouse locations')
-    .addTag('Products', 'Product catalog with inventory tracking')
-    .addTag('Inventory', 'Inventory levels and adjustments')
-    .addTag('Stock Movements', 'Stock IN/OUT operations')
-    .addTag('Purchase Orders', 'Purchase orders and receiving')
-    .addTag('Sales Orders', 'Sales orders and fulfillment')
-    .build();
-
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('docs', app, document, {
-    swaggerOptions: {
-      persistAuthorization: true,
-      tagsSorter: 'alpha',
-      operationsSorter: 'alpha',
-    },
-  });
-
-  await app.init();
-  cachedApp = app;
-  return expressApp;
+    await app.init();
+  }
+  return app;
 }
 
-export default async (req: Request, res: Response) => {
-  const app = await bootstrap();
-  return app(req, res);
+module.exports = async (req: any, res: any) => {
+  const server = await bootstrap();
+  const httpAdapter = server.getHttpAdapter();
+  const instance = httpAdapter.getInstance();
+  return instance(req, res);
 };
