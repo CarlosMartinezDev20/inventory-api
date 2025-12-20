@@ -53,6 +53,13 @@ export class SalesOrdersController {
     @Body() dto: FulfillSalesOrderDto,
     @CurrentUser('sub') userId: string,
   ) {
+    console.log('[CONTROLLER] fulfill called. userId from token:', userId);
+    console.log('[CONTROLLER] Request user object:', this.getCurrentUserDebug());
     return new StandardResponseDto(await this.service.fulfill(id, dto, userId));
+  }
+
+  private getCurrentUserDebug() {
+    // This won't work in controller context but shows the intent
+    return 'checking user context';
   }
 }
